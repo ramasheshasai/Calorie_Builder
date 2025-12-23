@@ -1,22 +1,26 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Picker } from "@react-native-picker/picker";
-import { useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useState } from "react";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View
 } from "react-native";
-import { styles } from "../../styles/homeStyles";
+import { styles } from "../styles/homeStyles";
 
 /* ---------------- API CONFIG ---------------- */
 const API_KEY = process.env.EXPO_PUBLIC_USDA_API_KEY;
+const STORAGE_KEY = "@food_diary_app";
 
 /* ---------------- TYPES ---------------- */
 type MealType = "breakfast" | "lunch" | "snack" | "dinner";
 
 type FoodItem = {
+  id: string;
   name: string;
   meal: MealType;
   quantity: number;
@@ -24,6 +28,22 @@ type FoodItem = {
   protein: number;
   carbs: number;
   fats: number;
+  timestamp: Date;
+};
+
+type DailyLog = {
+  date: string;
+  foods: FoodItem[];
+  targetCalories: number;
+};
+
+type UserProfile = {
+  age: string;
+  height: string;
+  weight: string;
+  gender: string | null;
+  activity: number | null;
+  goal: string | null;
 };
 
 /* ---------------- USDA SEARCH ---------------- */
@@ -62,15 +82,17 @@ const getNutritionFromFood = (food: any) => {
 };
 
 export default function HomeScreen() {
-  /* ---------------- PROFILE ---------------- */
-  const [age, setAge] = useState("");
-  const [height, setHeight] = useState("");
-  const [weight, setWeight] = useState("");
-  const [gender, setGender] = useState<string | null>(null);
-  const [activity, setActivity] = useState<number | null>(null);
-  const [goal, setGoal] = useState<string | null>(null);
+  /* ---------------- STATE: PROFILE ---------------- */
+  const [profile, setProfile] = useState<UserProfile>({
+    age: "",
+    height: "",
+    weight: "",
+    gender: null,
+    activity: null,
+    goal: null,
+  });
 
-  /* ---------------- FOOD ---------------- */
+  /* ---------------- STATE: FOOD & SEARCH ---------------- */
   const [foodName, setFoodName] = useState("");
   const [foodQty, setFoodQty] = useState("");
   const [meal, setMeal] = useState<MealType>("breakfast");
@@ -80,23 +102,96 @@ export default function HomeScreen() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedFood, setSelectedFood] = useState<any | null>(null);
 
-  /* ---------------- DAILY CALORIES ---------------- */
-  const profileComplete = age && height && weight && gender && activity && goal;
-  
-  const dailyCalories = (() => {
+  /* ---------------- LOAD DATA ON MOUNT ---------------- */
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
+
+  const loadData = async () => {
+    try {
+      const storedData = await AsyncStorage.getItem(STORAGE_KEY);
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        setProfile(parsed.profile || {});
+        loadTodaysFoods(parsed.logs || []);
+      }
+    } catch (error) {
+      console.error("Failed to load data:", error);
+    }
+  };
+
+  const loadTodaysFoods = (logs: DailyLog[]) => {
+    const today = new Date().toISOString().split("T")[0];
+    const todayLog = logs.find(log => log.date === today);
+    if (todayLog) {
+      setFoods(todayLog.foods.map(f => ({
+        ...f,
+        timestamp: new Date(f.timestamp)
+      })));
+    }
+  };
+
+  /* ---------------- SAVE DATA TO STORAGE ---------------- */
+  const saveData = async (updatedFoods: FoodItem[]) => {
+    try {
+      const storedData = await AsyncStorage.getItem(STORAGE_KEY);
+      const parsed = storedData ? JSON.parse(storedData) : { logs: [], profile };
+      
+      const today = new Date().toISOString().split("T")[0];
+      const existingLogIndex = parsed.logs.findIndex((log: DailyLog) => log.date === today);
+      
+      const targetCalories = calculateDailyCalories();
+      
+      if (existingLogIndex >= 0) {
+        parsed.logs[existingLogIndex].foods = updatedFoods;
+      } else {
+        parsed.logs.push({
+          date: today,
+          foods: updatedFoods,
+          targetCalories,
+        });
+      }
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    } catch (error) {
+      console.error("Failed to save data:", error);
+    }
+  };
+
+  /* ---------------- PROFILE HELPERS ---------------- */
+  const profileComplete = profile.age && profile.height && profile.weight && profile.gender && profile.activity && profile.goal;
+
+  const calculateDailyCalories = () => {
     if (!profileComplete) return 0;
 
     const bmr =
-      gender === "male"
-        ? 10 * +weight + 6.25 * +height - 5 * +age + 5
-        : 10 * +weight + 6.25 * +height - 5 * +age - 161;
+      profile.gender === "male"
+        ? 10 * +profile.weight + 6.25 * +profile.height - 5 * +profile.age + 5
+        : 10 * +profile.weight + 6.25 * +profile.height - 5 * +profile.age - 161;
 
-    let cal = bmr * activity;
-    if (goal === "lose") cal -= 500;
-    if (goal === "gain") cal += 500;
+    let cal = bmr * (profile.activity || 1.2);
+    if (profile.goal === "lose") cal -= 500;
+    if (profile.goal === "gain") cal += 500;
 
     return Math.round(cal);
-  })();
+  };
+
+  const handleProfileChange = (field: keyof UserProfile, value: any) => {
+    const updated = { ...profile, [field]: value };
+    setProfile(updated);
+    
+    try {
+      AsyncStorage.getItem(STORAGE_KEY).then(storedData => {
+        const parsed = storedData ? JSON.parse(storedData) : { logs: [] };
+        parsed.profile = updated;
+        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      });
+    } catch (error) {
+      console.error("Failed to save profile:", error);
+    }
+  };
 
   /* ---------------- SEARCH FOOD ---------------- */
   const searchFood = async () => {
@@ -135,23 +230,24 @@ export default function HomeScreen() {
       setLoading(true);
 
       const qty = Number(foodQty);
-      const grams = qty;
-
       const nutrition = getNutritionFromFood(selectedFood);
-      const factor = grams / 100;
+      const factor = qty / 100;
 
-      setFoods([
-        ...foods,
-        {
-          name: selectedFood.description,
-          meal,
-          quantity: qty,
-          calories: nutrition.calories * factor,
-          protein: nutrition.protein * factor,
-          carbs: nutrition.carbs * factor,
-          fats: nutrition.fats * factor,
-        },
-      ]);
+      const newFood: FoodItem = {
+        id: Date.now().toString(),
+        name: selectedFood.description,
+        meal,
+        quantity: qty,
+        calories: nutrition.calories * factor,
+        protein: nutrition.protein * factor,
+        carbs: nutrition.carbs * factor,
+        fats: nutrition.fats * factor,
+        timestamp: new Date(),
+      };
+
+      const updatedFoods = [...foods, newFood];
+      setFoods(updatedFoods);
+      await saveData(updatedFoods);
 
       // Reset form
       setFoodName("");
@@ -165,7 +261,14 @@ export default function HomeScreen() {
     }
   };
 
-  /* ---------------- TOTALS ---------------- */
+  /* ---------------- REMOVE FOOD ---------------- */
+  const removeFood = async (id: string) => {
+    const updatedFoods = foods.filter(f => f.id !== id);
+    setFoods(updatedFoods);
+    await saveData(updatedFoods);
+  };
+
+  /* ---------------- TOTALS & CALCULATIONS ---------------- */
   const totals = foods.reduce(
     (a, f) => {
       a.calories += f.calories;
@@ -177,9 +280,11 @@ export default function HomeScreen() {
     { calories: 0, protein: 0, carbs: 0, fats: 0 }
   );
 
+  const dailyCalories = calculateDailyCalories();
   const calorieProgress = dailyCalories > 0 ? (totals.calories / dailyCalories) * 100 : 0;
   const remaining = dailyCalories - totals.calories;
 
+  /* ---------------- RENDER MEAL SECTION ---------------- */
   const renderMeal = (mealType: MealType, title: string, emoji: string) => {
     const items = foods.filter(f => f.meal === mealType);
     if (items.length === 0) return null;
@@ -195,15 +300,19 @@ export default function HomeScreen() {
           <Text style={styles.mealCalories}>{mealTotal.toFixed(0)} kcal</Text>
         </View>
         
-        {items.map((f, i) => (
-          <View key={i} style={styles.foodRow}>
+        {items.map((f) => (
+          <View key={f.id} style={styles.foodRow}>
             <View style={styles.foodMainInfo}>
-              <Text style={styles.foodName}>{f.name}</Text>
-              <Text style={styles.foodQuantity}>
-                {f.name.toLowerCase() === "egg"
-                  ? `${f.quantity} ${f.quantity === 1 ? 'egg' : 'eggs'}`
-                  : `${f.quantity}g`}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.foodName}>{f.name}</Text>
+                <Text style={styles.foodQuantity}>{f.quantity}g</Text>
+              </View>
+              <Pressable
+                onPress={() => removeFood(f.id)}
+                style={{ padding: 8 }}
+              >
+                <Text style={{ fontSize: 16, color: "#EF4444" }}>✕</Text>
+              </Pressable>
             </View>
             
             <View style={styles.macroGrid}>
@@ -241,7 +350,7 @@ export default function HomeScreen() {
         <Text style={styles.appSubtitle}>Track your nutrition & reach your goals</Text>
       </View>
 
-      {/* CALORIE OVERVIEW - Only show when profile is complete */}
+      {/* CALORIE OVERVIEW */}
       {profileComplete && (
         <View style={styles.calorieOverview}>
           <View style={styles.calorieMainCard}>
@@ -325,8 +434,8 @@ export default function HomeScreen() {
             style={styles.input} 
             placeholder="Enter your age" 
             keyboardType="numeric" 
-            value={age}
-            onChangeText={setAge} 
+            value={profile.age}
+            onChangeText={(val) => handleProfileChange('age', val)}
           />
 
           <Text style={styles.inputLabel}>Height (cm)</Text>
@@ -334,8 +443,8 @@ export default function HomeScreen() {
             style={styles.input} 
             placeholder="Enter height in cm" 
             keyboardType="numeric" 
-            value={height}
-            onChangeText={setHeight} 
+            value={profile.height}
+            onChangeText={(val) => handleProfileChange('height', val)}
           />
 
           <Text style={styles.inputLabel}>Weight (kg)</Text>
@@ -343,13 +452,17 @@ export default function HomeScreen() {
             style={styles.input} 
             placeholder="Enter weight in kg" 
             keyboardType="numeric" 
-            value={weight}
-            onChangeText={setWeight} 
+            value={profile.weight}
+            onChangeText={(val) => handleProfileChange('weight', val)}
           />
 
           <Text style={styles.inputLabel}>Gender</Text>
           <View style={styles.pickerWrapper}>
-            <Picker selectedValue={gender} onValueChange={setGender} style={styles.picker}>
+            <Picker 
+              selectedValue={profile.gender} 
+              onValueChange={(val) => handleProfileChange('gender', val)}
+              style={styles.picker}
+            >
               <Picker.Item label="Select Gender" value={null} />
               <Picker.Item label="Male" value="male" />
               <Picker.Item label="Female" value="female" />
@@ -358,7 +471,11 @@ export default function HomeScreen() {
 
           <Text style={styles.inputLabel}>Activity Level</Text>
           <View style={styles.pickerWrapper}>
-            <Picker selectedValue={activity} onValueChange={setActivity} style={styles.picker}>
+            <Picker 
+              selectedValue={profile.activity} 
+              onValueChange={(val) => handleProfileChange('activity', val)}
+              style={styles.picker}
+            >
               <Picker.Item label="Select Activity Level" value={null} />
               <Picker.Item label="Sedentary (little to no exercise)" value={1.2} />
               <Picker.Item label="Moderate (exercise 3-5 days/week)" value={1.55} />
@@ -368,7 +485,11 @@ export default function HomeScreen() {
 
           <Text style={styles.inputLabel}>Goal</Text>
           <View style={styles.pickerWrapper}>
-            <Picker selectedValue={goal} onValueChange={setGoal} style={styles.picker}>
+            <Picker 
+              selectedValue={profile.goal} 
+              onValueChange={(val) => handleProfileChange('goal', val)}
+              style={styles.picker}
+            >
               <Picker.Item label="Select Your Goal" value={null} />
               <Picker.Item label="Lose Weight (-500 cal/day)" value="lose" />
               <Picker.Item label="Maintain Weight" value="maintain" />
@@ -417,7 +538,7 @@ export default function HomeScreen() {
             <View style={styles.searchResultsContainer}>
               <Text style={styles.searchResultsTitle}>Search Results:</Text>
               <ScrollView style={styles.searchResultsList} nestedScrollEnabled>
-                {searchResults.map((food, index) => {
+                {searchResults.map((food) => {
                   const nutrition = getNutritionFromFood(food);
                   return (
                     <Pressable 
@@ -493,7 +614,7 @@ export default function HomeScreen() {
       {/* FOOD DIARY */}
       {foods.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📓 Food Diary</Text>
+          <Text style={styles.sectionTitle}>📓 Today's Meals</Text>
           {renderMeal("breakfast", "Breakfast", "🍳")}
           {renderMeal("lunch", "Lunch", "🍚")}
           {renderMeal("snack", "Snacks", "☕")}
