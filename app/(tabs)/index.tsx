@@ -1,98 +1,67 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useState } from "react";
+import { Button, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [age, setAge] = useState("");
+  const [height, setHeight] = useState("");
+  const [weight, setWeight] = useState("");
+  const [foodQty, setFoodQty] = useState("");
+  const [result, setResult] = useState<any>(null);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const calculateDiet = () => {
+    const a = Number(age);
+    const h = Number(height);
+    const w = Number(weight);
+    const q = Number(foodQty);
+
+    if (!a || !h || !w || !q) return;
+
+    const bmr = 10 * w + 6.25 * h - 5 * a + 5;
+    const dailyCalories = bmr * 1.55;
+
+    const calories = q * 2.5;
+    const protein = q * 0.08;
+    const carbs = q * 0.3;
+    const fats = q * 0.05;
+
+    setResult({
+      dailyCalories: dailyCalories.toFixed(0),
+      calories: calories.toFixed(1),
+      protein: protein.toFixed(1),
+      carbs: carbs.toFixed(1),
+      fats: fats.toFixed(1),
+      remaining: (dailyCalories - calories).toFixed(0),
+    });
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Diet Planner</Text>
+
+      <TextInput style={styles.input} placeholder="Age" keyboardType="numeric" onChangeText={setAge} />
+      <TextInput style={styles.input} placeholder="Height (cm)" keyboardType="numeric" onChangeText={setHeight} />
+      <TextInput style={styles.input} placeholder="Weight (kg)" keyboardType="numeric" onChangeText={setWeight} />
+      <TextInput style={styles.input} placeholder="Food Quantity (grams)" keyboardType="numeric" onChangeText={setFoodQty} />
+
+      <Button title="Calculate" onPress={calculateDiet} />
+
+      {result && (
+        <View style={styles.result}>
+          <Text>Daily Calories Needed: {result.dailyCalories} kcal</Text>
+          <Text>Calories Consumed: {result.calories} kcal</Text>
+          <Text>Protein: {result.protein} g</Text>
+          <Text>Carbs: {result.carbs} g</Text>
+          <Text>Fats: {result.fats} g</Text>
+          <Text>Remaining Calories: {result.remaining} kcal</Text>
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+  container: { padding: 20, marginTop: 40 },
+  title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 20 },
+  input: { borderWidth: 1, padding: 10, marginBottom: 10, borderRadius: 6 },
+  result: { marginTop: 20, padding: 15, backgroundColor: "#e8f5e9", borderRadius: 6 },
 });
