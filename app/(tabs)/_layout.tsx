@@ -6,7 +6,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 
 export default function TabLayout() {
-  const colorScheme = "light"; // 🔥 FORCE LIGHT MODE
+  const colorScheme = "light";
 
   return (
     <Tabs
@@ -14,6 +14,9 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors[colorScheme].tint,
         tabBarStyle: {
           backgroundColor: "#ffffff",
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
         },
         headerShown: false,
         tabBarButton: HapticTab,
@@ -22,7 +25,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: "Track",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="house.fill" color={color} />
           ),
@@ -31,7 +34,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
-          title: "Explore",
+          title: "Diary",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="paperplane.fill" color={color} />
           ),
